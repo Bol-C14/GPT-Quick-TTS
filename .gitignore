@@ -24,6 +24,10 @@ wheels/
 venv/
 env/
 ENV/
+.venv/
+
+# Local config
+tts_config.json
 
 # IDE
 .vscode/

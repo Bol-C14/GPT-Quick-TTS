@@ -7,6 +7,8 @@ A feature-rich Text-to-Speech (TTS) console using OpenAI's GPT TTS API with an i
 - 🎨 **Beautiful TUI** - Full-screen terminal interface with color-coded elements
 - 🎭 **Speaking Styles** - Toggle Teaching, Calm, and Excited styles with keyboard shortcuts
 - ⌨️ **Keyboard Controls** - Quick style toggling with Ctrl+T/C/E
+ - 🎭 **Speaking Styles** - Toggle many speaking styles (Teaching, Calm, Excited, Narration, Questioning, Warm, Formal)
+ - ⌨️ **Keyboard Controls** - Quick style toggling with Ctrl+<key> and real-time voice switching (Ctrl+V)
 - 📊 **Real-time Status** - Live status updates (Idle / Sending / Playing / Error)
 - 📝 **Activity Log** - Timestamped log of all actions
 - 🌍 **UTF-8 Support** - Full support for international characters
@@ -84,7 +86,12 @@ A feature-rich Text-to-Speech (TTS) console using OpenAI's GPT TTS API with an i
    - Press `Ctrl+T` to toggle **Teaching** style (explanatory, educational tone)
    - Press `Ctrl+C` to toggle **Calm** style (relaxed, soothing tone)
    - Press `Ctrl+E` to toggle **Excited** style (enthusiastic, energetic tone)
-   - Active styles (shown in **green**) are automatically prepended to your text
+   - Press `Ctrl+N` to toggle **Narration** (warm, paced)
+   - Press `Ctrl+K` to toggle **Questioning** (curious, rising intonation)
+   - Press `Ctrl+W` to toggle **Warm** (soft, gentle)
+   - Press `Ctrl+F` to toggle **Formal** (precise, neutral)
+   - Press `Ctrl+V` to cycle available voices (alloy, ash, ballad, ...)
+   - Active styles (shown in **green**) are automatically prepended to your text as control tokens
 
 4. **Enter text to convert to speech**:
    - Type any text at the `TTS>` prompt and press Enter
@@ -133,6 +140,11 @@ Goodbye!
 | `Ctrl+T`    | Toggle Teaching style           |
 | `Ctrl+C`    | Toggle Calm style               |
 | `Ctrl+E`    | Toggle Excited style            |
+| `Ctrl+N`    | Toggle Narration style          |
+| `Ctrl+K`    | Toggle Questioning style        |
+| `Ctrl+W`    | Toggle Warm style               |
+| `Ctrl+F`    | Toggle Formal style             |
+| `Ctrl+V`    | Cycle voice personas            |
 | `Ctrl+Q`    | Quit the application            |
 | `Enter`     | Send text to TTS                |
 | `:q`        | Alternative quit command        |
