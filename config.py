@@ -16,6 +16,8 @@ def _default_config() -> Dict[str, Any]:
     return {
         "voice": "alloy",
         "streaming": False,
+        # API key (optional) - can be set interactively and persisted
+        "api_key": None,
         # styles is a mapping style_name -> bool
         "styles": {},
     }

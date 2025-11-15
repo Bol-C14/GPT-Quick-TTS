@@ -6,6 +6,7 @@ model and voice. Keeps the OpenAI-specific code out of the UI module.
 import os
 from typing import Optional
 from openai import OpenAI
+from async_runner import AsyncLoopThread
 
 
 class TTSClient:
@@ -15,6 +16,8 @@ class TTSClient:
             self.client = OpenAI(api_key=api_key)
         else:
             self.client = OpenAI()
+        # Async runner for streaming tasks (created on demand)
+        self._async_runner: Optional[AsyncLoopThread] = None
 
     def synthesize(self, model: str, voice: str, input_text: str, instructions: Optional[str] = None) -> bytes:
         """Synthesize `input_text` using specified model and voice.
@@ -54,19 +57,12 @@ class TTSClient:
             async with openai_async.audio.speech.with_streaming_response.create(**params) as response:
                 await LocalAudioPlayer().play(response)
 
-        # Run the async streaming player synchronously (call from a background thread)
-        import asyncio
+        # Use a dedicated async runner thread to execute the coroutine safely
         try:
-            asyncio.run(_stream_and_play())
-        except RuntimeError as e:
-            # Suppress "Event loop is closed" errors that can happen when the
-            # main program is shutting down and background async transports try
-            # to close on a closed loop. We'll log and return gracefully.
-            msg = str(e).lower()
-            if 'event loop is closed' in msg or 'loop is closed' in msg:
-                return
-            raise
+            if not self._async_runner:
+                self._async_runner = AsyncLoopThread()
+            # run_coroutine will block until completion or timeout
+            self._async_runner.run_coroutine(_stream_and_play())
         except Exception:
-            # Other errors during streaming should not crash the caller; re-raise
-            # so callers can decide to fall back to non-streaming.
+            # Propagate to caller so they can fallback to non-streaming
             raise

@@ -1,0 +1,56 @@
+"""Run asyncio coroutines on a dedicated background thread's event loop.
+
+This avoids creating/closing event loops per-call and prevents "Event loop is closed"
+exceptions during interpreter shutdown by providing a single controlled loop.
+"""
+import asyncio
+import threading
+from typing import Optional
+
+
+class AsyncLoopThread:
+    def __init__(self):
+        self._thread = threading.Thread(target=self._run, daemon=True)
+        self._loop: Optional[asyncio.AbstractEventLoop] = None
+        self._started = threading.Event()
+        self._stop_requested = threading.Event()
+        self._thread.start()
+        # Wait until loop is ready
+        self._started.wait()
+
+    def _run(self):
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
+        self._loop = loop
+        self._started.set()
+        # Run until stop requested
+        try:
+            loop.run_until_complete(self._main())
+        finally:
+            try:
+                loop.close()
+            except Exception:
+                pass
+
+    async def _main(self):
+        # Wait until stop requested
+        while not self._stop_requested.is_set():
+            await asyncio.sleep(0.1)
+
+    def run_coroutine(self, coro, timeout: Optional[float] = None):
+        """Submit a coroutine to the background loop and wait for result."""
+        if not self._loop:
+            raise RuntimeError("Async loop not started")
+        future = asyncio.run_coroutine_threadsafe(coro, self._loop)
+        return future.result(timeout=timeout)
+
+    def stop(self, timeout: float = 2.0):
+        """Request the loop to stop and join the thread."""
+        self._stop_requested.set()
+        if self._loop:
+            # Wake the loop so it can exit promptly
+            try:
+                self._loop.call_soon_threadsafe(lambda: None)
+            except Exception:
+                pass
+        self._thread.join(timeout=timeout)

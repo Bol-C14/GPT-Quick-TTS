@@ -24,6 +24,8 @@ from styles import build_style_prefix, VOICES
 from tts_client import TTSClient
 from player import AudioPlayer
 from config import load_config, save_config
+from async_runner import AsyncLoopThread
+from prompt_toolkit.mouse_events import MouseEventType, MouseButton
 
 # Styles and voices are defined in `styles.py` and consumed via helpers.
 
@@ -35,6 +37,9 @@ class TTSConsole:
         """Initialize the TTS Console."""
         self.tts = None
         self.status = "Initializing"
+        # Known styles (include extended set so mouse and key handlers work
+        # consistently). Extra styles were added to the header; ensure they
+        # exist in the runtime state so toggle_style can operate on them.
         self.styles = {
             'Teaching': False,
             'Calm': False,
@@ -43,13 +48,70 @@ class TTSConsole:
             'Questioning': False,
             'Warm': False,
             'Formal': False,
+            'Angry': False,
+            'Sarcastic': False,
+            'Serious': False,
+            'Playful': False,
+            'Whisper': False,
+            'Confident': False,
+            'Melancholic': False,
+            'Dramatic': False,
+            'Cheerful': False,
         }
         self.log_messages = []
-        # Initialize TTS client and audio player
+        # Load config early so we can use stored api_key when initializing TTS
+        cfg_pre = load_config()
+        api_key_cfg = cfg_pre.get('api_key')
+
+        # Initialize TTS client and audio player. If API key is missing, prompt
+        # the user once on the command line and persist it to config.
         try:
-            self.tts = TTSClient()
-        except Exception:
+            if api_key_cfg:
+                self.tts = TTSClient(api_key=api_key_cfg)
+            else:
+                self.tts = TTSClient()
+        except Exception as e:
             self.tts = None
+            msg = str(e).lower()
+            # If failure is due to missing api_key, prompt interactively
+            if 'api_key' in msg and not api_key_cfg:
+                try:
+                    # Prompt in-line before starting the TUI
+                    print('\nOpenAI API key not set.')
+                    api_input = input('Enter your OpenAI API key (leave empty to skip): ').strip()
+                    if api_input:
+                        # persist and try again
+                        cfg_pre['api_key'] = api_input
+                        save_config(cfg_pre)
+                        try:
+                            self.tts = TTSClient(api_key=api_input)
+                            # also set in environment for other libs
+                            try:
+                                os.environ['OPENAI_API_KEY'] = api_input
+                            except Exception:
+                                pass
+                        except Exception as e2:
+                            self.tts = None
+                            try:
+                                self.add_log(f"TTS client init failed after setting api_key: {e2}")
+                            except Exception:
+                                pass
+                    else:
+                        try:
+                            self.add_log('API key not provided; TTS disabled until API key is set.')
+                        except Exception:
+                            pass
+                except Exception:
+                    try:
+                        self.add_log(f"TTS client init failed: {e}")
+                    except Exception:
+                        pass
+            else:
+                # Other initialization error
+                try:
+                    self.add_log(f"TTS client init failed: {e}")
+                except Exception:
+                    pass
         self.player = AudioPlayer()
         self._audio_available = self.player.available()
         self.status = "Idle"
@@ -66,6 +128,17 @@ class TTSConsole:
                     self.styles[k] = bool(saved_styles[k])
                 except Exception:
                     pass
+        # Track background worker threads so we can join them on shutdown
+        self._worker_threads: list[threading.Thread] = []
+        # Async runner used by TTSClient for streaming; ensure a single runner exists
+        self._async_runner = AsyncLoopThread()
+        # Pass runner to TTS client instance
+        if self.tts is not None:
+            try:
+                # attach runner so tts client can reuse it
+                self.tts._async_runner = self._async_runner
+            except Exception:
+                pass
     
     def add_log(self, message: str):
         """Add a message to the log with timestamp."""
@@ -144,7 +217,14 @@ class TTSConsole:
             # If streaming mode is enabled, try to use the streaming player
             if self.streaming:
                 if not self.tts:
-                    raise RuntimeError("TTS client not initialized")
+                    # Try lazy initialization in case the environment changed
+                    try:
+                        self.tts = TTSClient()
+                    except Exception as e:
+                        self.add_log(f"Error initializing TTS client: {e}")
+                        if app:
+                            app.invalidate()
+                        return
                 try:
                     # stream_synthesize_and_play will block until streaming completes,
                     # so this method is expected to be invoked inside a background thread.
@@ -167,7 +247,13 @@ class TTSConsole:
 
             # Create TTS request via TTSClient (non-streaming path)
             if not self.tts:
-                raise RuntimeError("TTS client not initialized")
+                try:
+                    self.tts = TTSClient()
+                except Exception as e:
+                    self.add_log(f"Error initializing TTS client: {e}")
+                    if app:
+                        app.invalidate()
+                    return
 
             audio_bytes = self.tts.synthesize(
                 model="gpt-4o-mini-tts",
@@ -267,6 +353,109 @@ class TTSConsole:
             f'{status_line}\n'
             f'{"-" * 42}\n'
         )
+
+    def get_header_fragments(self):
+        """Return formatted fragments for the header including mouse handlers.
+
+        Each style label is a fragment with a mouse handler that toggles the
+        corresponding style when clicked. This lets users click labels with a
+        mouse when keyboard shortcuts are limited.
+        """
+        fragments = []
+        def add(text, style=None, handler=None):
+            cls = f'class:{style}' if style else ""
+            # Append a 3-tuple only when a mouse handler is provided.
+            # Prompt_toolkit expects either (style, text) or (style, text, mouse_handler).
+            if handler is None:
+                fragments.append((cls, text))
+            else:
+                fragments.append((cls, text, handler))
+
+        sep_line = '=' * 50 + '\n'
+        add(sep_line)
+        add('TTS Console - GPT Quick TTS\n', 'title')
+        add('Styles: Ctrl+(Key) — click labels to toggle\n', 'info')
+
+        # style buttons
+        style_order = [
+            ('Teaching', 'T'), ('Calm', 'C'), ('Excited', 'E'),
+            ('Narration', 'N'), ('Questioning', 'Q'), ('Warm', 'W'), ('Formal', 'F'),
+            ('Angry', 'A'), ('Sarcastic', 'S'), ('Serious', 'R'), ('Playful', 'P'),
+            ('Whisper', 'H'), ('Confident', 'O'), ('Melancholic', 'M'), ('Dramatic', 'D'), ('Cheerful', 'L'),
+        ]
+
+        # Build lines, similar wrapping logic to get_header_text but produce fragments
+        try:
+            app = get_app()
+            cols = app.output.get_size().columns
+        except Exception:
+            cols = shutil.get_terminal_size((80, 20)).columns
+
+        cur_len = 0
+        first_in_line = True
+        for name, key in style_order:
+            state = self.styles.get(name, False)
+            state_text = 'ON' if state else 'OFF'
+            label = f'[{name} ({key}) {state_text}]'
+            # prepare mouse handler
+            def make_handler(n):
+                def handler(mouse_event):
+                    # Only take ownership of the left-button MOUSE_UP event.
+                    # For all other mouse events (hover, move, mouse-down,
+                    # scroll), return NotImplemented so the Window can handle
+                    # selection, focus changes and other default behaviors.
+                    try:
+                        if (
+                            getattr(mouse_event, 'event_type', None)
+                            == MouseEventType.MOUSE_UP
+                            and getattr(mouse_event, 'button', None)
+                            == MouseButton.LEFT
+                        ):
+                            try:
+                                self.toggle_style(n)
+                                try:
+                                    get_app().invalidate()
+                                except Exception:
+                                    pass
+                            except Exception:
+                                pass
+                            # Indicate that we've handled the event.
+                            return None
+                        # Not handling this event: let Window handle it.
+                        return NotImplemented
+                    except Exception:
+                        # On unexpected errors, don't swallow the event — let
+                        # the Window handle it as a fallback.
+                        return NotImplemented
+
+                return handler
+            handler = make_handler(name)
+
+            # measure and wrap
+            l = len(label) + (0 if first_in_line else 1)
+            if cur_len + l > max(10, cols - 10):
+                # newline
+                add('\n')
+                cur_len = 0
+                first_in_line = True
+
+            if not first_in_line:
+                add(' ', None)
+                cur_len += 1
+
+            # choose style class for fragment
+            cls = 'style_on' if state else 'style_off'
+            add(label, cls, handler)
+            cur_len += len(label)
+            first_in_line = False
+
+        # end of styles block
+        add('\n')
+        voice_line = f'Voice: [{self.voice}] ({len(VOICES)} available) - Ctrl+V to cycle | Streaming: {"ON" if self.streaming else "OFF"} (Ctrl+S)\n'
+        add(voice_line, 'info')
+        add(f'Status: [{self.status}]\n', 'status')
+        add('-' * 42 + '\n')
+        return fragments
     
     def get_log_text(self):
         """Generate the log text."""
@@ -296,10 +485,14 @@ class TTSConsole:
             wrap_lines=False,
         )
         
-        # Create header window
+        # Create header window using formatted fragments so we can attach
+        # mouse handlers to style labels (click to toggle). The control
+        # will call `get_header_fragments` to produce a list of
+        # (style, text, mouse_handler?) tuples.
         header_control = FormattedTextControl(
-            text=self.get_header_text,
+            text=self.get_header_fragments,
             focusable=False,
+            show_cursor=False,
         )
         # Let the header window size itself to the content so lines don't get
         # clipped when wrapping occurs (previously fixed at height=6).
@@ -389,7 +582,44 @@ class TTSConsole:
         @kb.add('c-q')
         def _(event):
             """Quit the application."""
-            event.app.exit()
+            # Require a quick double-press to avoid accidental exits while
+            # toggling modes (some terminals and key combos can be noisy).
+            # First press sets a short-lived confirmation flag; second press
+            # within the window actually exits.
+            try:
+                if getattr(self, '_quit_confirm', False):
+                    event.app.exit()
+                    return
+                # If there are active worker threads or streaming on, be more
+                # explicit in the message.
+                active_workers = [t for t in self._worker_threads if t.is_alive()]
+                if self.streaming or active_workers:
+                    self.add_log('Quit requested — active streaming/workers detected. Press Ctrl+Q again to confirm exit.')
+                else:
+                    self.add_log('Press Ctrl+Q again within 2s to quit')
+                event.app.invalidate()
+                self._quit_confirm = True
+
+                def _reset_confirm():
+                    try:
+                        self._quit_confirm = False
+                        # Invalidate app to refresh header/log if still running
+                        try:
+                            get_app().invalidate()
+                        except Exception:
+                            pass
+                    except Exception:
+                        pass
+
+                timer = threading.Timer(2.0, _reset_confirm)
+                timer.daemon = True
+                timer.start()
+            except Exception:
+                # Fallback: exit immediately if something goes wrong
+                try:
+                    event.app.exit()
+                except Exception:
+                    pass
         
         @kb.add('c-v')
         def _(event):
@@ -424,6 +654,37 @@ class TTSConsole:
             except Exception:
                 pass
             event.app.invalidate()
+
+        # Add key bindings for extended styles where possible. We avoid
+        # overriding existing critical keybindings (and control sequences
+        # that map to terminal control like Ctrl-H or Ctrl-M).
+        extended_style_bindings = [
+            ('Teaching', 'T'), ('Calm', 'C'), ('Excited', 'E'),
+            ('Narration', 'N'), ('Questioning', 'Q'), ('Warm', 'W'), ('Formal', 'F'),
+            ('Angry', 'A'), ('Sarcastic', 'S'), ('Serious', 'R'), ('Playful', 'P'),
+            ('Whisper', 'H'), ('Confident', 'O'), ('Melancholic', 'M'), ('Dramatic', 'D'), ('Cheerful', 'L'),
+        ]
+
+        # Already used ctrl keys in this app. Avoid rebinding these.
+        used_ctrl_keys = set(['t','c','e','n','k','w','f','q','v','s'])
+        # Blacklist keys that interfere with common terminal controls.
+        blacklist = set(['h','m'])
+
+        for name, key in extended_style_bindings:
+            k = key.lower()
+            if k in used_ctrl_keys or k in blacklist:
+                # Skip binding to avoid conflicts.
+                continue
+
+            # Create a binding for Ctrl+<key> if it's safe.
+            try:
+                @kb.add(f'c-{k}')
+                def _style_toggle(event, _name=name):
+                    self.toggle_style(_name)
+                    event.app.invalidate()
+            except Exception:
+                # If binding fails for any reason, ignore and continue.
+                pass
         
         @kb.add('enter')
         def _(event):
@@ -440,12 +701,16 @@ class TTSConsole:
                 
                 # Process the text in a background thread so the UI
                 # (logs/status) can update immediately while TTS runs.
+                # Start worker thread (non-daemon) and track it so we can
+                # gracefully wait for it during shutdown. Use a short-lived
+                # background thread per request.
                 thread = threading.Thread(
                     target=self.text_to_speech,
                     args=(text, event.app),
-                    daemon=True,
+                    daemon=False,
                 )
                 thread.start()
+                self._worker_threads.append(thread)
                 # Invalidate immediately so the cleared input and any
                 # initial log messages are rendered right away.
                 event.app.invalidate()
@@ -456,13 +721,31 @@ class TTSConsole:
             key_bindings=kb,
             style=style,
             full_screen=True,
-            mouse_support=False,
+            mouse_support=True,
         )
         
         try:
             # Run the application
             app.run()
         finally:
+            # Signal workers to stop streaming and wait for background threads
+            try:
+                # disable streaming to avoid starting new streaming tasks
+                self.streaming = False
+                # join worker threads with a short timeout to allow cleanup
+                for t in list(self._worker_threads):
+                    try:
+                        t.join(timeout=2.0)
+                    except Exception:
+                        pass
+                # Stop async runner (if any) so background loop cleans up transports
+                try:
+                    if getattr(self, '_async_runner', None):
+                        self._async_runner.stop(timeout=2.0)
+                except Exception:
+                    pass
+            except Exception:
+                pass
             # Ensure player is cleaned up
             try:
                 self.player.quit()

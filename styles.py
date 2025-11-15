@@ -15,6 +15,16 @@ STYLE_TOKENS: Dict[str, str] = {
     'Questioning': "<<style:questioning, curious, rising>>",
     'Warm': "<<style:warm, soft>>",
     'Formal': "<<style:formal, precise>>",
+    # Additional expressive styles
+    'Angry': "<<style:angry, terse, forceful>>",
+    'Sarcastic': "<<style:sarcastic, wry, ironic>>",
+    'Serious': "<<style:serious, measured>>",
+    'Playful': "<<style:playful, light, whimsical>>",
+    'Whisper': "<<style:whisper, soft, intimate>>",
+    'Confident': "<<style:confident, assertive>>",
+    'Melancholic': "<<style:melancholic, slow, soft>>",
+    'Dramatic': "<<style:dramatic, emphatic>>",
+    'Cheerful': "<<style:cheerful, bright>>",
 }
 
 # A simple ordered list of voices supported by the TTS model (from docs)
