@@ -43,3 +43,6 @@ Thumbs.db
 # Temporary files
 *.tmp
 *.log
+
+# Video for processing
+*.mp4
