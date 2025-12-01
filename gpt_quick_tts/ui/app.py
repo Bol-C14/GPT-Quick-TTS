@@ -8,7 +8,8 @@ from typing import Callable, List, Optional
 
 from prompt_toolkit import Application
 from prompt_toolkit.application import get_app
-from prompt_toolkit.formatted_text import HTML
+from prompt_toolkit.formatted_text import HTML, FormattedText
+import html as _html
 from prompt_toolkit.key_binding import KeyBindings
 from prompt_toolkit.layout import HSplit, Layout, Window
 from prompt_toolkit.layout.controls import FormattedTextControl
@@ -104,11 +105,31 @@ class ConsoleApp:
 
     def _render_log(self):
         log_lines = self.state.logs()
+        # Build a safe HTML block for the log. User-supplied log lines may contain
+        # characters that break XML/HTML parsing (e.g. stray '<' or '&'), so escape
+        # them first. If HTML parsing still fails for any reason, fall back to a
+        # plain FormattedText sequence so the UI won't crash.
+        log_lines = list(log_lines) if log_lines else []
         if log_lines:
-            content = "\n".join(f"<log>{line}</log>" for line in log_lines)
+            safe_lines = [f"<log>{_html.escape(line)}</log>" for line in log_lines]
         else:
-            content = "<log>(no messages yet)</log>"
-        return HTML(f"\n<info>Log:</info>\n{content}\n")
+            safe_lines = ["<log>(no messages yet)</log>"]
+
+        content = "\n".join(safe_lines)
+        text = f"\n<info>Log:</info>\n{content}\n"
+
+        try:
+            return HTML(text)
+        except Exception:
+            # If HTML parsing fails, return plain FormattedText so the UI remains
+            # stable. Preserve styles where possible by using the same class names.
+            fragments = [("class:info", "\nLog:\n")]
+            if log_lines:
+                for line in log_lines:
+                    fragments.append(("class:log", line + "\n"))
+            else:
+                fragments.append(("class:log", "(no messages yet)\n"))
+            return FormattedText(fragments)
 
     def _invalidate(self):
         try:
@@ -141,6 +162,9 @@ class ConsoleApp:
     def _submit_text(self, text: str):
         if not text:
             return
+
+        # Persist the full text to the log file even if the UI truncates entries.
+        self.state.archive_user_text(text)
 
         callbacks = TTSCallbacks(on_status=self._set_status, on_log=self.state.add_log)
 

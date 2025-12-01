@@ -2,9 +2,11 @@ from __future__ import annotations
 
 """Mutable state for the console app (voice, styles, logs, status)."""
 
+import os
 import threading
 from collections import deque
 from datetime import datetime
+from pathlib import Path
 from typing import Deque, List
 
 from .config import AppConfig, ConfigStore
@@ -21,11 +23,19 @@ class ConsoleState:
         self.status = "Initializing"
         self.voice = voices[0] if voices else "alloy"
         self.streaming = False
+        self._log_path = self._resolve_log_path()
 
         cfg = self._config_store.load()
         cfg.ensure_style_defaults(self.styles.names)
         self._apply_config(cfg)
         self.status = "Idle"
+
+    def _resolve_log_path(self) -> Path:
+        env_path = os.getenv("TTS_LOG_PATH")
+        if env_path:
+            return Path(env_path).expanduser()
+        # Place logs alongside the config by default.
+        return self._config_store.path.with_name("tts_console.log")
 
     def _apply_config(self, cfg: AppConfig) -> None:
         if cfg.voice in self.voices:
@@ -46,14 +56,31 @@ class ConsoleState:
         return cfg
 
     # Logging helpers
-    def add_log(self, message: str) -> None:
+    def add_log(self, message: str, *, persist_only: bool = False) -> None:
         timestamp = datetime.now().strftime("%H:%M:%S")
+        line = f"[{timestamp}] {message}"
         with self._lock:
-            self._logs.append(f"[{timestamp}] {message}")
+            if not persist_only:
+                self._logs.append(line)
+            self._append_log(line)
 
     def logs(self) -> List[str]:
         with self._lock:
             return list(self._logs)
+
+    def archive_user_text(self, text: str) -> None:
+        if not text:
+            return
+        self.add_log(f"User input: {text}", persist_only=True)
+
+    def _append_log(self, line: str) -> None:
+        try:
+            self._log_path.parent.mkdir(parents=True, exist_ok=True)
+            with self._log_path.open("a", encoding="utf-8") as fp:
+                fp.write(line + "\n")
+        except Exception:
+            # Logging should never break the UI.
+            pass
 
     # Status helpers
     def set_status(self, status: str) -> None:

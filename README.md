@@ -133,6 +133,8 @@ A feature-rich Text-to-Speech (TTS) console using OpenAI's GPT TTS API with an i
   - `streaming` – boolean toggle for low-latency streaming playback
   - `api_key` – optional persisted OpenAI key (env var `OPENAI_API_KEY` still works)
   - `styles` – map of style name -> enabled
+- Session logs (including the full text you type) persist to `tts_console.log` in the
+   project root by default. Override the location by setting `TTS_LOG_PATH`.
 - New styles added in the future are merged automatically so older config files remain valid.
 
 ### Example Session
