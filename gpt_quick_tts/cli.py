@@ -2,6 +2,7 @@ from __future__ import annotations
 
 """Entrypoint for the GPT-Quick-TTS console app."""
 
+import argparse
 import os
 import sys
 from typing import Optional
@@ -14,6 +15,21 @@ from .openai_client import OpenAITTSClient
 from .state import ConsoleState
 from .styles import DEFAULT_STYLES, VOICES, StyleState
 from .ui.app import ConsoleApp
+
+
+def _parse_args(argv: list[str]):
+    parser = argparse.ArgumentParser(description="GPT-Quick-TTS console", add_help=True)
+    parser.add_argument(
+        "--install-virtual-mic",
+        action="store_true",
+        help="Install a virtual microphone (VB-Cable) on Windows, then exit.",
+    )
+    parser.add_argument(
+        "--force-virtual-mic",
+        action="store_true",
+        help="Force virtual mic install even if the device appears present.",
+    )
+    return parser.parse_args(argv)
 
 
 def _resolve_api_key(config_store: ConfigStore) -> Optional[str]:
@@ -62,7 +78,31 @@ def build_app() -> ConsoleApp:
     return ConsoleApp(state, engine, on_shutdown=shutdown)
 
 
-def main():
+def _maybe_install_virtual_mic(from_flag: bool, force: bool) -> bool:
+    """Return True if install path handled (flag requested), False otherwise."""
+    should_auto = os.getenv("TTS_AUTO_INSTALL_VIRTUAL_MIC", "").lower() in {"1", "true", "yes"}
+    force_auto = os.getenv("TTS_FORCE_VIRTUAL_MIC", "").lower() in {"1", "true", "yes"}
+
+    if not from_flag and not should_auto:
+        return False
+
+    try:
+        from .virtual_mic import install_virtual_cable
+    except Exception as exc:
+        print(f"Virtual mic helper unavailable: {exc}")
+        return from_flag
+
+    requested_force = force or force_auto
+    ok = install_virtual_cable(force=requested_force)
+    if from_flag:
+        sys.exit(0 if ok else 1)
+    return False
+
+
+def main(argv: Optional[list[str]] = None):
+    args = _parse_args(list(argv) if argv is not None else sys.argv[1:])
+    _maybe_install_virtual_mic(from_flag=args.install_virtual_mic, force=args.force_virtual_mic)
+
     try:
         app = build_app()
         app.run()

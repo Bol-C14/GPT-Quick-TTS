@@ -111,6 +111,17 @@ setx OPENAI_BASE_URL "https://api.openai.com/v1"
 - exe 默认内置了 `OPENAI_BASE_URL=https://api.castralhub.com/openai/v1`，如果需要改回官方平台请在系统环境中设置 `OPENAI_BASE_URL` 后再运行 exe。
 - 建议分发 `dist\GPT-Quick-TTS` 文件夹（one-folder），不要直接使用 single-file（--onefile）除非你能确认所有动态库与音频依赖都正确包含。
 
+虚拟麦克风（VB-Cable）自动安装（仅 Windows）
+----
+- 需要联网和管理员权限，安装后通常要重启；随后在声音设置里选择 “CABLE Input/CABLE Output”。
+- 一次性安装：`python tts_console.py --install-virtual-mic`（或 `./start_tts.bat --install-virtual-mic`）。
+- 启动时自动尝试安装：
+  ```powershell
+  $env:TTS_AUTO_INSTALL_VIRTUAL_MIC=1   # 可选：TTS_FORCE_VIRTUAL_MIC=1 强制重装
+  ./start_tts.bat
+  ```
+- 驱动下载地址可用 `TTS_VIRTUAL_MIC_URL` 覆盖，默认为官方 VB-Cable ZIP。
+
 故障排查
 ----
 - 若程序启动后立刻退出：检查是否使用了非交互式启动方式或在某些环境下 `input()` 被阻塞。建议直接双击 exe 或在终端手动运行 `start_tts.bat` 来观察提示。
