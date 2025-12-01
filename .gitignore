@@ -19,6 +19,7 @@ wheels/
 *.egg-info/
 .installed.cfg
 *.egg
+.cache/
 
 # Virtual environments
 venv/
@@ -44,5 +45,8 @@ Thumbs.db
 *.tmp
 *.log
 
-# Video for processing
+# Temp files for processing
 *.mp4
+*.m4a
+*.wav
+

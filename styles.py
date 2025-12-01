@@ -1,47 +1,22 @@
-"""Style and voice configuration for GPT-Quick-TTS.
+"""Compatibility surface for legacy imports."""
+from __future__ import annotations
 
-This module centralizes STYLE_TOKENS, available VOICES and helpers for
-building control-token prefixes for the TTS model.
-"""
-from typing import Dict, List
+from gpt_quick_tts.styles import (
+    DEFAULT_STYLES,
+    VOICES,
+    StyleDefinition,
+    StyleState,
+    build_style_prefix,
+)
 
-# Control-like tokens sent to the TTS model (less likely to be read verbatim)
-STYLE_TOKENS: Dict[str, str] = {
-    'Teaching': "<<style:teaching, clear, friendly>>",
-    'Calm': "<<style:calm, gentle>>",
-    'Excited': "<<style:excited, energetic>>",
-    # Extra styles for extended control
-    'Narration': "<<style:narration, warm, paced>>",
-    'Questioning': "<<style:questioning, curious, rising>>",
-    'Warm': "<<style:warm, soft>>",
-    'Formal': "<<style:formal, precise>>",
-    # Additional expressive styles
-    'Angry': "<<style:angry, terse, forceful>>",
-    'Sarcastic': "<<style:sarcastic, wry, ironic>>",
-    'Serious': "<<style:serious, measured>>",
-    'Playful': "<<style:playful, light, whimsical>>",
-    'Whisper': "<<style:whisper, soft, intimate>>",
-    'Confident': "<<style:confident, assertive>>",
-    'Melancholic': "<<style:melancholic, slow, soft>>",
-    'Dramatic': "<<style:dramatic, emphatic>>",
-    'Cheerful': "<<style:cheerful, bright>>",
-}
+# Expose a mapping matching the previous STYLE_TOKENS constant.
+STYLE_TOKENS = {definition.name: definition.token for definition in DEFAULT_STYLES}
 
-# A simple ordered list of voices supported by the TTS model (from docs)
-VOICES: List[str] = [
-    'alloy', 'ash', 'ballad', 'coral', 'echo', 'fable',
-    'nova', 'onyx', 'sage', 'shimmer', 'alloy',
+__all__ = [
+    "STYLE_TOKENS",
+    "DEFAULT_STYLES",
+    "VOICES",
+    "StyleDefinition",
+    "StyleState",
+    "build_style_prefix",
 ]
-
-def build_style_prefix(styles: Dict[str, bool]) -> str:
-    """Return concatenated control tokens for active styles.
-
-    styles: mapping of style-name -> bool (active)
-    """
-    tokens = []
-    for name, active in styles.items():
-        if active:
-            tok = STYLE_TOKENS.get(name)
-            if tok:
-                tokens.append(tok)
-    return "".join(tokens)

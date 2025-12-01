@@ -5,15 +5,33 @@ A feature-rich Text-to-Speech (TTS) console using OpenAI's GPT TTS API with an i
 ## Features
 
 - 🎨 **Beautiful TUI** - Full-screen terminal interface with color-coded elements
-- 🎭 **Speaking Styles** - Toggle Teaching, Calm, and Excited styles with keyboard shortcuts
-- ⌨️ **Keyboard Controls** - Quick style toggling with Ctrl+T/C/E
- - 🎭 **Speaking Styles** - Toggle many speaking styles (Teaching, Calm, Excited, Narration, Questioning, Warm, Formal)
- - ⌨️ **Keyboard Controls** - Quick style toggling with Ctrl+<key> and real-time voice switching (Ctrl+V)
+- 🎭 **Speaking Styles** - Toggle many speaking styles (Teaching, Calm, Excited, Narration, Questioning, Warm, Formal, and more)
+- ⌨️ **Keyboard Controls** - Quick style toggling with Ctrl+<key> plus voice cycling (Ctrl+V) and streaming toggle (Ctrl+S)
 - 📊 **Real-time Status** - Live status updates (Idle / Sending / Playing / Error)
 - 📝 **Activity Log** - Timestamped log of all actions
 - 🌍 **UTF-8 Support** - Full support for international characters
 - 🔊 **Immediate Playback** - Audio plays directly in your terminal
 - 🎨 **Color Coded** - Green for active styles, red for inactive, gray for logs
+
+## Architecture (modularized)
+
+- Core package lives in `gpt_quick_tts/`:
+  - `config_store.py` – JSON-backed persistence for voice, streaming, API key, and styles
+  - `styles.py` – style tokens, keyboard shortcuts, and voice catalogue
+  - `tts_client.py` – OpenAI client wrapper with optional streaming playback
+  - `audio.py` – pygame-based audio playback helper
+  - `controller.py` & `state.py` – orchestration + runtime state for the console
+  - `ui/console.py` – prompt_toolkit UI built on the controller/state
+- Thin entrypoint `tts_console.py` simply runs the console UI, so other apps can import the controller and reuse it.
+- Backwards-compatible shims (`config.py`, `styles.py`, `player.py`, `async_runner.py`, `tts_client.py`) forward to the new package to ease extension.
+
+### Extending / embedding
+
+- Build alternate UIs by importing the controller:  
+  `from gpt_quick_tts.controller import ConsoleController`
+- Swap audio backends by providing your own `AudioPlayer` implementation to the controller.
+- Override config location by instantiating `ConfigStore(path=...)`.
+- Add new styles by extending `STYLE_TOKENS`/`STYLE_SHORTCUTS` in `gpt_quick_tts/styles.py`; defaults merge safely into existing configs.
 
 ## Requirements
 
@@ -57,8 +75,12 @@ A feature-rich Text-to-Speech (TTS) console using OpenAI's GPT TTS API with an i
 
 ## Usage
 
-1. **Run the TTS Console**:
+1. **Run the TTS Console** (choose one):
    ```bash
+   # Preferred: modular entrypoint
+   python -m gpt_quick_tts
+
+   # Legacy wrapper (still supported)
    python3 tts_console.py
    ```
 
@@ -102,6 +124,16 @@ A feature-rich Text-to-Speech (TTS) console using OpenAI's GPT TTS API with an i
 
 5. **Quit the application**:
    - Press `Ctrl+Q` or type `:q` and press Enter
+
+## Configuration & persistence
+
+- User preferences are stored in `tts_config.json` in the repo root.
+- The `ConfigStore` (in `gpt_quick_tts/config_store.py`) manages loading/saving:
+  - `voice` – current voice name
+  - `streaming` – boolean toggle for low-latency streaming playback
+  - `api_key` – optional persisted OpenAI key (env var `OPENAI_API_KEY` still works)
+  - `styles` – map of style name -> enabled
+- New styles added in the future are merged automatically so older config files remain valid.
 
 ### Example Session
 
@@ -202,6 +234,15 @@ If requests to the OpenAI API fail:
 - Check your internet connection
 - Verify your API key is valid and has credit
 - Check OpenAI's service status at https://status.openai.com
+
+## Architecture (refactor overview)
+
+- `gpt_quick_tts/cli.py` – builds the app (config, OpenAI client, audio, state).
+- `gpt_quick_tts/styles.py` – style definitions and helpers.
+- `gpt_quick_tts/engine.py` – service layer that talks to OpenAI and plays audio.
+- `gpt_quick_tts/state.py` – mutable UI state (logs, status, styles, voice).
+- `gpt_quick_tts/ui/app.py` – prompt_toolkit UI wired to the engine/state.
+- Legacy modules (`tts_console.py`, `config.py`, `styles.py`, etc.) now forward to the package for backwards compatibility.
 
 ## License
 
